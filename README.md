@@ -1,2 +1,19 @@
-# Dijiang
-A very fast TCP and RDMA communication framework.
+# 关于“帝江”
+“帝江”是一个通信框架，底层可以使用TCP方式或者RDMA方式。
+
+# 使用方式
+## Server端
+```
+
+```
+
+## Client端
+```
+
+```
+
+
+# 名称来源
+帝江，《山海经》中的神兽，人面鸟身，背有四张肉翅，胸前、腹部、双腿六爪;善速度，四翅一扇二十八万里。
+
+![帝江](https://user-images.githubusercontent.com/56379080/147912511-a0f90093-9c03-41d7-b066-4d08d316691b.png)
