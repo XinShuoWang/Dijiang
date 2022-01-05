@@ -4,12 +4,28 @@
 # 使用方式
 ## Server端
 ```
-
+char port[] = "12345";
+const int threadNum = 256;
+RdmaServerSocket *socket = new RdmaServerSocket(port, threadNum);
+auto handler = [](char *buffer, int size)
+{
+    fprintf(stdout, "size is : %d \n", size);
+    std::string content(buffer, size);
+    fprintf(stdout, "content is: %s \n", content.c_str());
+};
+socket->RegisterMessageCallback(handler, messageBufferSize);
+socket->Loop();
 ```
 
 ## Client端
 ```
-
+SAY("Client");
+char port[] = "12345";
+char ip[] = "10.0.0.28";
+RdmaClientSocket *socket = new RdmaClientSocket(ip, port, 16, 10 * 1024 * 1024, 500);
+char message[] = "hello, world!";
+socket->Write(message, strlen(message));
+socket->Loop();
 ```
 
 
