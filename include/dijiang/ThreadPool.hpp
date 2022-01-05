@@ -1,5 +1,7 @@
 #pragma once
 
+#include "Debug.hpp"
+
 #include <thread>
 #include <functional>
 #include <utility>
@@ -9,12 +11,12 @@
 #include <queue>
 #include <condition_variable>
 
-typedef std::function<void()> Task;
+typedef std::function<void(void)> Task;
 
 class ThreadPool
 {
 public:
-  ThreadPool(int thread_num)
+  ThreadPool(const int thread_num)
   {
     thread_num_ = thread_num;
     threads_.reserve(thread_num_);
@@ -26,7 +28,7 @@ public:
                                         {
                                           while (true)
                                           {
-                                            Task func;
+                                            Task func = [](){ return; };
                                             {
                                               std::unique_lock<std::mutex> lock(mutex_);
                                               cv_.wait(lock, [&]()
