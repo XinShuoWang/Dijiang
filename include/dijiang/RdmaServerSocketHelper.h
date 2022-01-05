@@ -9,7 +9,7 @@
 #include <cstring>
 #include <rdma/rdma_cma.h>
 
-static void PostReceive(rdma_cm_id *id)
+static void ServerPostReceive(rdma_cm_id *id)
 {
     ibv_recv_wr wr, *bad_wr = NULL;
     memset(&wr, 0, sizeof(wr));
@@ -19,9 +19,9 @@ static void PostReceive(rdma_cm_id *id)
     TEST_NZ(ibv_post_recv(id->qp, &wr, &bad_wr));
 }
 
-static void SendMessage(rdma_cm_id *id)
+static void ServerSendMessage(rdma_cm_id *id)
 {
-    ConnectionContext *ctx = (ConnectionContext *)id->context;
+    ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
     ibv_send_wr wr, *bad_wr = NULL;
     ibv_sge sge;
     memset(&wr, 0, sizeof(wr));

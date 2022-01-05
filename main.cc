@@ -5,14 +5,13 @@
 
 int main(int argc, char **argv)
 {
-    // if (argc != 2)
-    // {
-    //     std::cout << "<usage>: ./demo {-s|-c}" << std::endl;
-    //     return 0;
-    // }
-    // bool is_server = ((strcmp(*(argv + 1), "-s") == 0));
-    bool is_server = true;
-    std::cout << *(argv + 1) << std::endl;
+    if (argc != 2)
+    {
+        std::cout << "<usage>: ./demo {-s|-c}" << std::endl;
+        return 0;
+    }
+    bool is_server = ((strcmp(*(argv + 1), "-s") == 0));
+    const int messageBufferSize = 10 * 1024 * 1024;
     if (is_server)
     {
         SAY("Server");
@@ -25,7 +24,6 @@ int main(int argc, char **argv)
             std::string content(buffer, size);
             fprintf(stdout, "content is: %s \n", content.c_str());
         };
-        const int messageBufferSize = 10 * 1024 * 1024;
         socket->RegisterMessageCallback(handler, messageBufferSize);
         socket->Loop();
     }
@@ -34,9 +32,10 @@ int main(int argc, char **argv)
         SAY("Client");
         char port[] = "12345";
         char ip[] = "10.0.0.28";
-        RdmaClientSocket *socket = new RdmaClientSocket(ip, port);
+        RdmaClientSocket *socket = new RdmaClientSocket(ip, port, 16, 10 * 1024 * 1024, 500);
         char message[] = "hello, world!";
         socket->Write(message, strlen(message));
+        socket->Loop();
     }
     return 0;
 }

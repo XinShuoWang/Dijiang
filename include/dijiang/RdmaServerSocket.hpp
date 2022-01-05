@@ -5,7 +5,7 @@
 #include "Context.h"
 #include "Debug.hpp"
 #include "ThreadPool.hpp"
-#include "RdmaSocketHelper.h"
+#include "RdmaServerSocketHelper.h"
 
 #include <netdb.h>
 #include <unistd.h>
@@ -93,21 +93,21 @@ public:
         completion_cb_ = [func](ibv_wc *wc)
         {
             rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)wc->wr_id;
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
+            ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
             if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM)
             {
                 uint32_t size = ntohl(wc->imm_data);
                 if (size == 0)
                 {
                     ctx->msg->id = MSG_DONE;
-                    SendMessage(id);
+                    ServerSendMessage(id);
                 }
                 else
                 {
                     func(ctx->buffer, size);
-                    PostReceive(id);
+                    ServerPostReceive(id);
                     ctx->msg->id = MSG_READY;
-                    SendMessage(id);
+                    ServerSendMessage(id);
                 }
             }
         };
@@ -183,27 +183,27 @@ private:
     {
         pre_conn_cb_ = [&, bufferSize](rdma_cm_id *id)
         {
-            ConnectionContext *ctx = (ConnectionContext *)malloc(sizeof(ConnectionContext));
+            ServerConnectionContext *ctx = (ServerConnectionContext *)malloc(sizeof(ServerConnectionContext));
             id->context = ctx;
             posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), bufferSize);
             TEST_Z(ctx->buffer_mr = ibv_reg_mr(context_->pd, ctx->buffer, bufferSize, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
             posix_memalign((void **)&ctx->msg, sysconf(_SC_PAGESIZE), sizeof(*ctx->msg));
             TEST_Z(ctx->msg_mr = ibv_reg_mr(context_->pd, ctx->msg, sizeof(*ctx->msg), 0));
-            PostReceive(id);
+            ServerPostReceive(id);
         };
 
         connect_cb_ = [&](rdma_cm_id *id)
         {
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
+            ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
             ctx->msg->id = MSG_MR;
             ctx->msg->data.mr.addr = (uintptr_t)ctx->buffer_mr->addr;
             ctx->msg->data.mr.rkey = ctx->buffer_mr->rkey;
-            SendMessage(id);
+            ServerSendMessage(id);
         };
 
         disconnect_cb_ = [](rdma_cm_id *id)
         {
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
+            ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
             ibv_dereg_mr(ctx->buffer_mr);
             ibv_dereg_mr(ctx->msg_mr);
             free(ctx->buffer);
