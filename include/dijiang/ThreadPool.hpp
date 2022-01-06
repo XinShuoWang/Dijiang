@@ -28,7 +28,8 @@ public:
                                         {
                                           while (true)
                                           {
-                                            Task func = [](){ return; };
+                                            Task func = []()
+                                            { return; };
                                             {
                                               std::unique_lock<std::mutex> lock(mutex_);
                                               cv_.wait(lock, [&]()
@@ -57,6 +58,14 @@ public:
       queue_.push(job);
     }
     cv_.notify_one();
+  }
+
+  int GetThreadNum() { return thread_num_; }
+
+  int GetWaitNum()
+  {
+    std::unique_lock<std::mutex> lock(mutex_);
+    return queue_.size();
   }
 
   void Stop()

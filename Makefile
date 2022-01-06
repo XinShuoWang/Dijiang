@@ -1,6 +1,6 @@
 CXX=g++
 TARGET=demo
-CXX_FLAGS=-std=c++11 -O0 -g
+CXX_FLAGS=-std=c++11 -O3 -g
 LIBS=-lpthread -libverbs -lrdmacm
 INCLUDE_DIR=./include
 
