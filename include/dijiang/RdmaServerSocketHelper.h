@@ -21,7 +21,7 @@ static void ServerPostReceive(rdma_cm_id *id)
 
 static void ServerSendMessage(rdma_cm_id *id)
 {
-    ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
+    ConnectionContext *ctx = (ConnectionContext *)id->context;
     ibv_send_wr wr, *bad_wr = NULL;
     ibv_sge sge;
     memset(&wr, 0, sizeof(wr));

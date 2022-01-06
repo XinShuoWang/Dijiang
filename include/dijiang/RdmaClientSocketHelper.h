@@ -10,7 +10,7 @@
 
 static void ClientWriteRemote(struct rdma_cm_id *id, uint32_t len)
 {
-    ClientConnectionContext *ctx = (ClientConnectionContext *)id->context;
+    ConnectionContext *ctx = (ConnectionContext *)id->context;
     ibv_send_wr wr, *bad_wr = NULL;
     ibv_sge sge;
     memset(&wr, 0, sizeof(wr));
@@ -33,7 +33,7 @@ static void ClientWriteRemote(struct rdma_cm_id *id, uint32_t len)
 
 static void ClientPostReceive(struct rdma_cm_id *id)
 {
-    ClientConnectionContext *ctx = (ClientConnectionContext *)id->context;
+    ConnectionContext *ctx = (ConnectionContext *)id->context;
     ibv_recv_wr wr, *bad_wr = NULL;
     ibv_sge sge;
     memset(&wr, 0, sizeof(ibv_recv_wr));

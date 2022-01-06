@@ -25,7 +25,7 @@ public:
         TEST_NZ(rdma_resolve_addr(speaker_, NULL, address->ai_addr, timeout));
         freeaddrinfo(address);
         // set connection context
-        speaker_->context = (ClientConnectionContext *)malloc(sizeof(ClientConnectionContext));
+        speaker_->context = (ConnectionContext *)malloc(sizeof(ConnectionContext));
     }
 
     ~RdmaClientSocket()
@@ -84,7 +84,7 @@ private:
     {
         pre_conn_cb_ = [&](rdma_cm_id *id)
         {
-            ClientConnectionContext *ctx = (ClientConnectionContext *)id->context;
+            ConnectionContext *ctx = (ConnectionContext *)id->context;
             posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), bufferSize);
             TEST_Z(ctx->buffer_mr = ibv_reg_mr(context_->pd, ctx->buffer, bufferSize, 0));
             posix_memalign((void **)&ctx->msg, sysconf(_SC_PAGESIZE), sizeof(*ctx->msg));
@@ -95,7 +95,7 @@ private:
         completion_cb_ = [](ibv_wc *wc)
         {
             rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)(wc->wr_id);
-            ClientConnectionContext *ctx = (ClientConnectionContext *)id->context;
+            ConnectionContext *ctx = (ConnectionContext *)id->context;
             if (wc->opcode & IBV_WC_RECV)
             {
                 if (ctx->msg->id == MSG_MR)
@@ -103,16 +103,16 @@ private:
                     printf("received MR, sending file name\n");
                     ctx->peer_addr = ctx->msg->data.mr.addr;
                     ctx->peer_rkey = ctx->msg->data.mr.rkey;
-                    memset(((ClientConnectionContext *)id->context)->buffer, 'a', 20);
-                    ((ClientConnectionContext *)id->context)->buffer[21] = '\0';
+                    memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
+                    ((ConnectionContext *)id->context)->buffer[21] = '\0';
                     ClientWriteRemote(id, 21);
                     printf("received MR, sending file name\n");
                 }
                 else if (ctx->msg->id == MSG_READY)
                 {
                     printf("received READY, sending chunk\n");
-                    memset(((ClientConnectionContext *)id->context)->buffer, 'a', 20);
-                    ((ClientConnectionContext *)id->context)->buffer[21] = '\0';
+                    memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
+                    ((ConnectionContext *)id->context)->buffer[21] = '\0';
                     ClientWriteRemote(id, 21);
                     printf("received READY, sending chunk\n");
                 }
@@ -191,8 +191,8 @@ private:
         TEST_NZ(rdma_create_qp(id, context_->pd, &qp_attr));
     }
 
-    std::function<void(rdma_cm_id *)> pre_conn_cb_;
-    std::function<void(ibv_wc *)> completion_cb_;
+    ConnectionCB pre_conn_cb_;
+    CompletionCB completion_cb_;
     ThreadPool *thread_pool_;
     // context
     rdma_cm_id *speaker_;

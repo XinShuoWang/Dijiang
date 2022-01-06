@@ -17,8 +17,6 @@
 #include <cstdlib>
 #include <cstring>
 
-typedef std::function<void(char *, int)> Handler;
-
 class RdmaServerSocket
 {
 public:
@@ -88,12 +86,12 @@ public:
         }
     }
 
-    void RegisterMessageCallback(Handler func, const int bufferSize)
+    void RegisterMessageCallback(std::function<void(char *, int)> func, const int bufferSize)
     {
         completion_cb_ = [func](ibv_wc *wc)
         {
             rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)wc->wr_id;
-            ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
+            ConnectionContext *ctx = (ConnectionContext *)id->context;
             if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM)
             {
                 uint32_t size = ntohl(wc->imm_data);
@@ -183,7 +181,7 @@ private:
     {
         pre_conn_cb_ = [&, bufferSize](rdma_cm_id *id)
         {
-            ServerConnectionContext *ctx = (ServerConnectionContext *)malloc(sizeof(ServerConnectionContext));
+            ConnectionContext *ctx = (ConnectionContext *)malloc(sizeof(ConnectionContext));
             id->context = ctx;
             posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), bufferSize);
             TEST_Z(ctx->buffer_mr = ibv_reg_mr(context_->pd, ctx->buffer, bufferSize, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
@@ -194,7 +192,7 @@ private:
 
         connect_cb_ = [&](rdma_cm_id *id)
         {
-            ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
+            ConnectionContext *ctx = (ConnectionContext *)id->context;
             ctx->msg->id = MSG_MR;
             ctx->msg->data.mr.addr = (uintptr_t)ctx->buffer_mr->addr;
             ctx->msg->data.mr.rkey = ctx->buffer_mr->rkey;
@@ -203,7 +201,7 @@ private:
 
         disconnect_cb_ = [](rdma_cm_id *id)
         {
-            ServerConnectionContext *ctx = (ServerConnectionContext *)id->context;
+            ConnectionContext *ctx = (ConnectionContext *)id->context;
             ibv_dereg_mr(ctx->buffer_mr);
             ibv_dereg_mr(ctx->msg_mr);
             free(ctx->buffer);
@@ -213,8 +211,8 @@ private:
     }
 
     // task
-    std::function<void(rdma_cm_id *)> pre_conn_cb_, connect_cb_, disconnect_cb_;
-    std::function<void(ibv_wc *)> completion_cb_;
+    ConnectionCB pre_conn_cb_, connect_cb_, disconnect_cb_;
+    CompletionCB completion_cb_;
     ThreadPool *thread_pool_;
     // rdma socket
     sockaddr_in6 address_;
