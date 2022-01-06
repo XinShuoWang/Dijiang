@@ -5,7 +5,6 @@
 #include "Context.h"
 #include "Debug.hpp"
 #include "ThreadPool.hpp"
-#include "RdmaServerSocketHelper.h"
 
 #include <netdb.h>
 #include <unistd.h>
@@ -88,7 +87,7 @@ public:
 
     void RegisterMessageCallback(std::function<void(char *, int)> func, const int bufferSize)
     {
-        completion_cb_ = [func](ibv_wc *wc)
+        completion_cb_ = [&, func](ibv_wc *wc)
         {
             rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)wc->wr_id;
             ConnectionContext *ctx = (ConnectionContext *)id->context;
@@ -208,6 +207,33 @@ private:
             free(ctx->msg);
             free(ctx);
         };
+    }
+
+    void ServerPostReceive(rdma_cm_id *id)
+    {
+        ibv_recv_wr wr, *bad_wr = NULL;
+        memset(&wr, 0, sizeof(wr));
+        wr.wr_id = (uintptr_t)id;
+        wr.sg_list = NULL;
+        wr.num_sge = 0;
+        TEST_NZ(ibv_post_recv(id->qp, &wr, &bad_wr));
+    }
+
+    void ServerSendMessage(rdma_cm_id *id)
+    {
+        ConnectionContext *ctx = (ConnectionContext *)id->context;
+        ibv_send_wr wr, *bad_wr = NULL;
+        ibv_sge sge;
+        memset(&wr, 0, sizeof(wr));
+        wr.wr_id = (uintptr_t)id;
+        wr.opcode = IBV_WR_SEND;
+        wr.sg_list = &sge;
+        wr.num_sge = 1;
+        wr.send_flags = IBV_SEND_SIGNALED;
+        sge.addr = (uintptr_t)ctx->msg;
+        sge.length = sizeof(*ctx->msg);
+        sge.lkey = ctx->msg_mr->lkey;
+        TEST_NZ(ibv_post_send(id->qp, &wr, &bad_wr));
     }
 
     // task
