@@ -78,31 +78,24 @@ protected:
         ConnectionContext *ctx = (ConnectionContext *)id->context;
         if (wc->opcode & IBV_WC_RECV)
         {
-            if (ctx->msg->id == MSG_MR)
+            switch (ctx->msg->id)
             {
-                SAY("received MR, sending file name");
+            case MSG_MR:
                 ctx->peer_addr = ctx->msg->data.mr.addr;
                 ctx->peer_rkey = ctx->msg->data.mr.rkey;
+                // there is no need break
+            case MSG_READY:
                 memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
                 ((ConnectionContext *)id->context)->buffer[21] = '\0';
                 Send(id, 21);
-                SAY("received MR, sending file name");
-            }
-            else if (ctx->msg->id == MSG_READY)
-            {
-                SAY("received READY, sending chunk");
-                memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
-                ((ConnectionContext *)id->context)->buffer[21] = '\0';
-                Send(id, 21);
-                printf("received READY, sending chunk");
-            }
-            else if (ctx->msg->id == MSG_DONE)
-            {
-                SAY("received DONE, disconnecting");
+                PostReceive(id);
+                break;
+            case MSG_DONE:
                 rdma_disconnect(id);
                 return;
+            default:
+                return;
             }
-            PostReceive(id);
         }
     }
 
