@@ -5,15 +5,10 @@
 class RdmaClientSocket : protected RdmaSocket
 {
 public:
-    RdmaClientSocket(const char *ip, const char *port, int thread_num, int buffer_size, int timeout) : RdmaSocket(thread_num)
+    RdmaClientSocket(const char *ip, const char *port, int thread_num, int buffer_size, int timeout) : RdmaSocket(thread_num, buffer_size)
     {
         // init
         timeout_ = timeout;
-        // set callback
-        SetPreConnectionCB(buffer_size);
-        SetOnConnectionCB();
-        SetDisconnectCB();
-        SetCompletionCB();
         // resolve address
         addrinfo *address = NULL;
         TEST_NZ(getaddrinfo(ip, port, NULL, &address));
@@ -43,7 +38,7 @@ public:
             case RDMA_CM_EVENT_ADDR_RESOLVED:
                 printf("RDMA_CM_EVENT_ADDR_RESOLVED \n");
                 InitConnection(event_copy.id);
-                pre_conn_cb_(event_copy.id);
+                PreConnectionCB(event_copy.id, buffer_size_);
                 TEST_NZ(rdma_resolve_route(event_copy.id, timeout_));
                 break;
             case RDMA_CM_EVENT_ROUTE_RESOLVED:
@@ -57,7 +52,7 @@ public:
             case RDMA_CM_EVENT_DISCONNECTED:
                 printf("RDMA_CM_EVENT_DISCONNECTED \n");
                 rdma_destroy_qp(event_copy.id);
-                disconnect_cb_(event_copy.id);
+                DisconnectCB(event_copy.id);
                 rdma_destroy_id(event_copy.id);
                 return;
             default:
@@ -67,53 +62,48 @@ public:
     }
 
 protected:
-    void SetPreConnectionCB(int buffer_size) override
+    void PreConnectionCB(rdma_cm_id *id, int buffer_size) override
     {
-        pre_conn_cb_ = [&](rdma_cm_id *id)
-        {
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
-            posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), buffer_size);
-            TEST_Z(ctx->buffer_mr = ibv_reg_mr(context_->pd, ctx->buffer, buffer_size, 0));
-            posix_memalign((void **)&ctx->msg, sysconf(_SC_PAGESIZE), sizeof(*ctx->msg));
-            TEST_Z(ctx->msg_mr = ibv_reg_mr(context_->pd, ctx->msg, sizeof(*ctx->msg), IBV_ACCESS_LOCAL_WRITE));
-            PostReceive(id);
-        };
+        ConnectionContext *ctx = (ConnectionContext *)id->context;
+        posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), buffer_size);
+        TEST_Z(ctx->buffer_mr = ibv_reg_mr(context_->pd, ctx->buffer, buffer_size, 0));
+        posix_memalign((void **)&ctx->msg, sysconf(_SC_PAGESIZE), sizeof(*ctx->msg));
+        TEST_Z(ctx->msg_mr = ibv_reg_mr(context_->pd, ctx->msg, sizeof(*ctx->msg), IBV_ACCESS_LOCAL_WRITE));
+        PostReceive(id);
     }
 
-    void SetCompletionCB() override {
-        completion_cb_ = [&](ibv_wc *wc)
+    void CompletionCB(ibv_wc *wc) override
+    {
+        rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)(wc->wr_id);
+        ConnectionContext *ctx = (ConnectionContext *)id->context;
+        if (wc->opcode & IBV_WC_RECV)
         {
-            rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)(wc->wr_id);
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
-            if (wc->opcode & IBV_WC_RECV)
+            if (ctx->msg->id == MSG_MR)
             {
-                if (ctx->msg->id == MSG_MR)
-                {
-                    SAY("received MR, sending file name\n");
-                    ctx->peer_addr = ctx->msg->data.mr.addr;
-                    ctx->peer_rkey = ctx->msg->data.mr.rkey;
-                    memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
-                    ((ConnectionContext *)id->context)->buffer[21] = '\0';
-                    Send(id, 21);
-                    SAY("received MR, sending file name\n");
-                }
-                else if (ctx->msg->id == MSG_READY)
-                {
-                    SAY("received READY, sending chunk\n");
-                    memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
-                    ((ConnectionContext *)id->context)->buffer[21] = '\0';
-                    Send(id, 21);
-                    printf("received READY, sending chunk\n");
-                }
-                else if (ctx->msg->id == MSG_DONE)
-                {
-                    SAY("received DONE, disconnecting\n");
-                    rdma_disconnect(id);
-                    return;
-                }
-                PostReceive(id);
+                SAY("received MR, sending file name\n");
+                ctx->peer_addr = ctx->msg->data.mr.addr;
+                ctx->peer_rkey = ctx->msg->data.mr.rkey;
+                memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
+                ((ConnectionContext *)id->context)->buffer[21] = '\0';
+                Send(id, 21);
+                SAY("received MR, sending file name\n");
             }
-        };
+            else if (ctx->msg->id == MSG_READY)
+            {
+                SAY("received READY, sending chunk\n");
+                memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
+                ((ConnectionContext *)id->context)->buffer[21] = '\0';
+                Send(id, 21);
+                printf("received READY, sending chunk\n");
+            }
+            else if (ctx->msg->id == MSG_DONE)
+            {
+                SAY("received DONE, disconnecting\n");
+                rdma_disconnect(id);
+                return;
+            }
+            PostReceive(id);
+        }
     }
 
     void Send(rdma_cm_id *id, uint32_t len) override

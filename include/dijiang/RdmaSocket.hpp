@@ -17,19 +17,11 @@
 class RdmaSocket
 {
 public:
-    RdmaSocket(int thread_num)
+    RdmaSocket(int thread_num, int buffer_size)
     {
-        // set callback
-        pre_conn_cb_ = [](rdma_cm_id *)
-        { return; };
-        connect_cb_ = [](rdma_cm_id *)
-        { return; };
-        disconnect_cb_ = [](rdma_cm_id *)
-        { return; };
-        completion_cb_ = [](ibv_wc *)
-        { return; };
         // init resources
         thread_pool_ = new ThreadPool(thread_num);
+        buffer_size_ = buffer_size;
         context_ = NULL;
         TEST_Z(channel_ = rdma_create_event_channel());
         TEST_NZ(rdma_create_id(channel_, &id_, NULL, RDMA_PS_TCP));
@@ -46,24 +38,21 @@ public:
     virtual void Loop() = 0;
 
 protected:
-    virtual void SetPreConnectionCB(int buffer_size) {}
+    virtual void PreConnectionCB(rdma_cm_id *id, int buffer_size) {}
 
-    virtual void SetOnConnectionCB() {}
+    virtual void OnConnectionCB(rdma_cm_id *id) {}
 
-    virtual void SetDisconnectCB()
+    virtual void DisconnectCB(rdma_cm_id *id)
     {
-        disconnect_cb_ = [](rdma_cm_id *id)
-        {
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
-            ibv_dereg_mr(ctx->buffer_mr);
-            ibv_dereg_mr(ctx->msg_mr);
-            free(ctx->buffer);
-            free(ctx->msg);
-            free(ctx);
-        };
+        ConnectionContext *ctx = (ConnectionContext *)id->context;
+        ibv_dereg_mr(ctx->buffer_mr);
+        ibv_dereg_mr(ctx->msg_mr);
+        free(ctx->buffer);
+        free(ctx->msg);
+        free(ctx);
     }
 
-    virtual void SetCompletionCB() {}
+    virtual void CompletionCB(ibv_wc *wc) {}
 
     virtual void Send(rdma_cm_id *id, uint32_t len) = 0;
 
@@ -101,7 +90,7 @@ protected:
                 {
                     if (wc.status == IBV_WC_SUCCESS)
                     {
-                        completion_cb_(&wc);
+                        CompletionCB(&wc);
                     }
                     else
                     {
@@ -110,7 +99,8 @@ protected:
                 }
             }
         };
-        for(int i = 0; i < thread_pool_->GetThreadNum(); ++i) thread_pool_->AddJob(poller);
+        for (int i = 0; i < thread_pool_->GetThreadNum(); ++i)
+            thread_pool_->AddJob(poller);
     }
 
     virtual void InitConnection(rdma_cm_id *id)
@@ -131,11 +121,9 @@ protected:
     }
 
 protected:
-    // callback
-    ConnectionCB pre_conn_cb_, connect_cb_, disconnect_cb_;
-    CompletionCB completion_cb_;
     ThreadPool *thread_pool_;
     rdma_cm_id *id_;
     rdma_event_channel *channel_;
     Context *context_;
+    int buffer_size_;
 };

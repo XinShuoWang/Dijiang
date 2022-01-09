@@ -5,13 +5,8 @@
 class RdmaServerSocket : protected RdmaSocket
 {
 public:
-    RdmaServerSocket(const char *port, const int thread_num, const int buffer_size) : RdmaSocket(thread_num)
+    RdmaServerSocket(const char *port, const int thread_num, const int buffer_size) : RdmaSocket(thread_num, buffer_size)
     {
-        // set callback
-        SetPreConnectionCB(buffer_size);
-        SetOnConnectionCB();
-        SetDisconnectCB();
-        SetCompletionCB();
         // init address
         sockaddr_in6 address;
         memset(&address, 0, sizeof(sockaddr_in6));
@@ -45,17 +40,17 @@ public:
             case RDMA_CM_EVENT_CONNECT_REQUEST:
                 SAY("RDMA_CM_EVENT_CONNECT_REQUEST");
                 InitConnection(event_copy.id);
-                pre_conn_cb_(event_copy.id);
+                PreConnectionCB(event_copy.id, buffer_size_);
                 TEST_NZ(rdma_accept(event_copy.id, &cm_params));
                 break;
             case RDMA_CM_EVENT_ESTABLISHED:
                 SAY("RDMA_CM_EVENT_ESTABLISHED");
-                connect_cb_(event_copy.id);
+                OnConnectionCB(event_copy.id);
                 break;
             case RDMA_CM_EVENT_DISCONNECTED:
                 SAY("RDMA_CM_EVENT_DISCONNECTED");
                 rdma_destroy_qp(event_copy.id);
-                disconnect_cb_(event_copy.id);
+                DisconnectCB(event_copy.id);
                 rdma_destroy_id(event_copy.id);
                 break;
             default:
@@ -65,57 +60,48 @@ public:
     }
 
 protected:
-    void SetPreConnectionCB(int buffer_size) override
+    void PreConnectionCB(rdma_cm_id *id, int buffer_size) override
     {
-        pre_conn_cb_ = [&](rdma_cm_id *id)
-        {
-            ConnectionContext *ctx = (ConnectionContext *)malloc(sizeof(ConnectionContext));
-            id->context = ctx;
-            posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), buffer_size);
-            TEST_Z(ctx->buffer_mr = ibv_reg_mr(context_->pd, ctx->buffer, buffer_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
-            posix_memalign((void **)&ctx->msg, sysconf(_SC_PAGESIZE), sizeof(*ctx->msg));
-            TEST_Z(ctx->msg_mr = ibv_reg_mr(context_->pd, ctx->msg, sizeof(*ctx->msg), 0));
-            PostReceive(id);
-        };
+        ConnectionContext *ctx = (ConnectionContext *)malloc(sizeof(ConnectionContext));
+        id->context = ctx;
+        posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), buffer_size);
+        TEST_Z(ctx->buffer_mr = ibv_reg_mr(context_->pd, ctx->buffer, buffer_size, IBV_ACCESS_LOCAL_WRITE | IBV_ACCESS_REMOTE_WRITE));
+        posix_memalign((void **)&ctx->msg, sysconf(_SC_PAGESIZE), sizeof(*ctx->msg));
+        TEST_Z(ctx->msg_mr = ibv_reg_mr(context_->pd, ctx->msg, sizeof(*ctx->msg), 0));
+        PostReceive(id);
     }
 
-    void SetOnConnectionCB() override
+    void OnConnectionCB(rdma_cm_id *id) override
     {
-        connect_cb_ = [&](rdma_cm_id *id)
-        {
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
-            ctx->msg->id = MSG_MR;
-            ctx->msg->data.mr.addr = (uintptr_t)ctx->buffer_mr->addr;
-            ctx->msg->data.mr.rkey = ctx->buffer_mr->rkey;
-            Send(id, sizeof(*ctx->msg));
-        };
+        ConnectionContext *ctx = (ConnectionContext *)id->context;
+        ctx->msg->id = MSG_MR;
+        ctx->msg->data.mr.addr = (uintptr_t)ctx->buffer_mr->addr;
+        ctx->msg->data.mr.rkey = ctx->buffer_mr->rkey;
+        Send(id, sizeof(*ctx->msg));
     }
 
-    void SetCompletionCB() override
+    void CompletionCB(ibv_wc *wc) override
     {
-        completion_cb_ = [&](ibv_wc *wc)
+        rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)wc->wr_id;
+        ConnectionContext *ctx = (ConnectionContext *)id->context;
+        if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM)
         {
-            rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)wc->wr_id;
-            ConnectionContext *ctx = (ConnectionContext *)id->context;
-            if (wc->opcode == IBV_WC_RECV_RDMA_WITH_IMM)
+            uint32_t size = ntohl(wc->imm_data);
+            if (size == 0)
             {
-                uint32_t size = ntohl(wc->imm_data);
-                if (size == 0)
-                {
-                    ctx->msg->id = MSG_DONE;
-                    Send(id, sizeof(*ctx->msg));
-                }
-                else
-                {
-                    {
-                        fprintf(stderr, "size is: %d\n", size);
-                    }
-                    PostReceive(id);
-                    ctx->msg->id = MSG_READY;
-                    Send(id, sizeof(*ctx->msg));
-                }
+                ctx->msg->id = MSG_DONE;
+                Send(id, sizeof(*ctx->msg));
             }
-        };
+            else
+            {
+                {
+                    fprintf(stderr, "size is: %d\n", size);
+                }
+                PostReceive(id);
+                ctx->msg->id = MSG_READY;
+                Send(id, sizeof(*ctx->msg));
+            }
+        }
     }
 
     void PostReceive(rdma_cm_id *id) override
