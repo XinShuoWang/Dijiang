@@ -36,21 +36,21 @@ public:
             switch (event_copy.event)
             {
             case RDMA_CM_EVENT_ADDR_RESOLVED:
-                printf("RDMA_CM_EVENT_ADDR_RESOLVED \n");
+                printf("RDMA_CM_EVENT_ADDR_RESOLVED");
                 InitConnection(event_copy.id);
                 PreConnectionCB(event_copy.id, buffer_size_);
                 TEST_NZ(rdma_resolve_route(event_copy.id, timeout_));
                 break;
             case RDMA_CM_EVENT_ROUTE_RESOLVED:
-                printf("RDMA_CM_EVENT_ROUTE_RESOLVED \n");
+                printf("RDMA_CM_EVENT_ROUTE_RESOLVED");
                 TEST_NZ(rdma_connect(event_copy.id, &params));
                 break;
             case RDMA_CM_EVENT_ESTABLISHED:
-                printf("RDMA_CM_EVENT_ESTABLISHED \n");
+                printf("RDMA_CM_EVENT_ESTABLISHED");
                 // none
                 break;
             case RDMA_CM_EVENT_DISCONNECTED:
-                printf("RDMA_CM_EVENT_DISCONNECTED \n");
+                printf("RDMA_CM_EVENT_DISCONNECTED");
                 rdma_destroy_qp(event_copy.id);
                 DisconnectCB(event_copy.id);
                 rdma_destroy_id(event_copy.id);
@@ -80,25 +80,25 @@ protected:
         {
             if (ctx->msg->id == MSG_MR)
             {
-                SAY("received MR, sending file name\n");
+                SAY("received MR, sending file name");
                 ctx->peer_addr = ctx->msg->data.mr.addr;
                 ctx->peer_rkey = ctx->msg->data.mr.rkey;
                 memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
                 ((ConnectionContext *)id->context)->buffer[21] = '\0';
                 Send(id, 21);
-                SAY("received MR, sending file name\n");
+                SAY("received MR, sending file name");
             }
             else if (ctx->msg->id == MSG_READY)
             {
-                SAY("received READY, sending chunk\n");
+                SAY("received READY, sending chunk");
                 memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
                 ((ConnectionContext *)id->context)->buffer[21] = '\0';
                 Send(id, 21);
-                printf("received READY, sending chunk\n");
+                printf("received READY, sending chunk");
             }
             else if (ctx->msg->id == MSG_DONE)
             {
-                SAY("received DONE, disconnecting\n");
+                SAY("received DONE, disconnecting");
                 rdma_disconnect(id);
                 return;
             }
