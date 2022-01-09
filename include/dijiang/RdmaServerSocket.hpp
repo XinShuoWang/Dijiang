@@ -2,6 +2,8 @@
 
 #include "RdmaSocket.hpp"
 
+typedef std::function<void(char *, int)> ServerHandler;
+
 class RdmaServerSocket : protected RdmaSocket
 {
 public:
@@ -18,6 +20,8 @@ public:
     }
 
     ~RdmaServerSocket() override {}
+
+    void RegisterHandler(ServerHandler handler) { handler_ = handler; }
 
     void Loop() override
     {
@@ -95,7 +99,8 @@ protected:
             else
             {
                 {
-                    fprintf(stderr, "size is: %d\n", size);
+                    // fprintf(stderr, "size is: %d\n", size);
+                    handler_(ctx->buffer, size);
                 }
                 PostReceive(id);
                 ctx->msg->id = MSG_READY;
@@ -132,4 +137,5 @@ protected:
     }
 
 private:
+    ServerHandler handler_;
 };
