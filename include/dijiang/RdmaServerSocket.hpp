@@ -99,7 +99,6 @@ protected:
             else
             {
                 {
-                    // fprintf(stderr, "size is: %d\n", size);
                     handler_(ctx->buffer, size);
                 }
                 PostReceive(id);

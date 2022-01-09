@@ -21,7 +21,7 @@ int main(int argc, char **argv)
         RdmaServerSocket *socket = new RdmaServerSocket(port, threadNum, messageBufferSize);
         auto handler = [](char *buffer, int size)
         {
-            fprintf(stdout, "size is: %d\n", size);
+            fprintf(stdout, "dijinag -> size is: %d\n", size);
         };
         socket->RegisterHandler(handler);
         socket->Loop();
