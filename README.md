@@ -5,7 +5,7 @@
 ## Server端
 ```
 SAY("Server");
-RdmaServerSocket *socket = new RdmaServerSocket(port, threadNum, messageBufferSize);
+auto socket = std::make_shared<RdmaServerSocket>(port, threadNum, messageBufferSize);
 auto handler = [](char *buffer, int size)
 {
     std::string str(buffer, size);
@@ -19,7 +19,7 @@ socket->Loop();
 ```
 SAY("Client");
 int timeout = 500;
-RdmaClientSocket *socket = new RdmaClientSocket(ip, port, threadNum, messageBufferSize, timeout);
+auto socket = std::make_shared<RdmaClientSocket>(ip, port, threadNum, messageBufferSize, timeout);
 char data[] = "hello,world";
 int size = strlen(data);
 socket->Write(data, size);
