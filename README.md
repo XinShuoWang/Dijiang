@@ -27,6 +27,9 @@ socket->Write(data, size);
 ```
 
 ## 使用截图
+![server端](https://user-images.githubusercontent.com/56379080/148733078-ae867b2c-fb79-467b-9fc4-aade24f7bd3b.png)
+
+![client端](https://user-images.githubusercontent.com/56379080/148733112-8c04e304-73fe-47c7-9c9e-72631f1f12d3.png)
 
 
 # 性能测试
