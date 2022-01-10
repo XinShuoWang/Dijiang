@@ -2,6 +2,7 @@
 #include "dijiang/RdmaClientSocket.hpp"
 
 #include <iostream>
+#include <memory>
 
 int main(int argc, char **argv)
 {
@@ -18,7 +19,7 @@ int main(int argc, char **argv)
     if (is_server)
     {
         SAY("Server");
-        RdmaServerSocket *socket = new RdmaServerSocket(port, threadNum, messageBufferSize);
+        auto socket = std::make_shared<RdmaServerSocket>(port, threadNum, messageBufferSize);
         auto handler = [](char *buffer, int size)
         {
             std::string str(buffer, size);
@@ -31,7 +32,7 @@ int main(int argc, char **argv)
     {
         SAY("Client");
         int timeout = 500;
-        RdmaClientSocket *socket = new RdmaClientSocket(ip, port, threadNum, messageBufferSize, timeout);
+        auto socket = std::make_shared<RdmaClientSocket>(ip, port, threadNum, messageBufferSize, timeout);
         char data[] = "hello,world";
         int size = strlen(data);
         socket->Write(data, size);
