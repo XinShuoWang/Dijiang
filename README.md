@@ -4,29 +4,36 @@
 # 使用方式
 ## Server端
 ```
-char port[] = "12345";
-const int threadNum = 256;
-RdmaServerSocket *socket = new RdmaServerSocket(port, threadNum);
+SAY("Server");
+RdmaServerSocket *socket = new RdmaServerSocket(port, threadNum, messageBufferSize);
 auto handler = [](char *buffer, int size)
 {
-    fprintf(stdout, "size is : %d \n", size);
-    std::string content(buffer, size);
-    fprintf(stdout, "content is: %s \n", content.c_str());
+    std::string str(buffer, size);
+    fprintf(stdout, "dijinag -> size is: %d, content is: %s, \n", size, str.c_str());
 };
-socket->RegisterMessageCallback(handler, messageBufferSize);
+socket->RegisterHandler(handler);
 socket->Loop();
 ```
 
 ## Client端
 ```
 SAY("Client");
-char port[] = "12345";
-char ip[] = "10.0.0.28";
-RdmaClientSocket *socket = new RdmaClientSocket(ip, port, 16, 10 * 1024 * 1024, 500);
-char message[] = "hello, world!";
-socket->Write(message, strlen(message));
+int timeout = 500;
+RdmaClientSocket *socket = new RdmaClientSocket(ip, port, threadNum, messageBufferSize, timeout);
 socket->Loop();
+char data[] = "hello,world";
+int size = strlen(data);
+socket->Write(data, size);
 ```
+
+## 使用截图
+
+
+# 性能测试
+## 带宽测试
+
+
+## 时延测试
 
 
 # 名称来源
