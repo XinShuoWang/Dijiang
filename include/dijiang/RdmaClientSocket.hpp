@@ -19,6 +19,8 @@ public:
         freeaddrinfo(address);
         // set connection context
         id_->context = (ConnectionContext *)malloc(sizeof(ConnectionContext));
+        // run Loop function to listen event
+        this->Loop();
     }
 
     ~RdmaClientSocket() override {}
