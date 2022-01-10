@@ -9,6 +9,9 @@
 #include <rdma/rdma_cma.h>
 
 #include <thread>
+#include <mutex>
+#include <chrono>
+#include <condition_variable>
 #include <functional>
 #include <cstdio>
 #include <cstdlib>
@@ -99,7 +102,7 @@ protected:
                 }
             }
         };
-        for (int i = 0; i < thread_pool_->GetThreadNum(); ++i)
+        for (int i = 0; i < thread_pool_->GetThreadNum() / 2; ++i)
             thread_pool_->AddJob(poller);
     }
 

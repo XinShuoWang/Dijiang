@@ -21,7 +21,8 @@ int main(int argc, char **argv)
         RdmaServerSocket *socket = new RdmaServerSocket(port, threadNum, messageBufferSize);
         auto handler = [](char *buffer, int size)
         {
-            fprintf(stdout, "dijinag -> size is: %d\n", size);
+            std::string str(buffer, size);
+            fprintf(stdout, "dijinag -> size is: %d, content is: %s, \n", size, str.c_str());
         };
         socket->RegisterHandler(handler);
         socket->Loop();
@@ -29,8 +30,12 @@ int main(int argc, char **argv)
     else
     {
         SAY("Client");
-        RdmaClientSocket *socket = new RdmaClientSocket(ip, port, threadNum, messageBufferSize, 500);
+        int timeout = 500;
+        RdmaClientSocket *socket = new RdmaClientSocket(ip, port, threadNum, messageBufferSize, timeout);
         socket->Loop();
+        char data[] = "hello,world";
+        int size = strlen(data);
+        socket->Write(data, size);
     }
     return 0;
 }

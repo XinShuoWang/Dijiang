@@ -24,6 +24,3 @@ struct ConnectionContext {
     uint64_t peer_addr;
     uint32_t peer_rkey;
 };
-
-typedef std::function<void(rdma_cm_id *)> ConnectionCB;
-typedef std::function<void(ibv_wc *)> CompletionCB;

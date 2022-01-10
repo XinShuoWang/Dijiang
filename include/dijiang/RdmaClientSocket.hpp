@@ -9,6 +9,9 @@ public:
     {
         // init
         timeout_ = timeout;
+        record_valid_ = false;
+        record_ = nullptr;
+        record_len_ = 0;
         // resolve address
         addrinfo *address = NULL;
         TEST_NZ(getaddrinfo(ip, port, NULL, &address));
@@ -20,45 +23,59 @@ public:
 
     ~RdmaClientSocket() override {}
 
+    void Write(char *buffer, int size)
+    {
+        std::unique_lock<std::mutex> lg(record_lock_);
+        record_cv_.wait(lg, [&]()
+                        { return !record_valid_; });
+        record_ = buffer, record_len_ = size, record_valid_ = true;
+        record_cv_.notify_one();
+        record_cv_.wait(lg, [&]()
+                        { return !record_valid_; });
+    }
+
     void Loop() override
     {
-        rdma_conn_param params;
-        memset(&params, 0, sizeof(rdma_conn_param));
-        params.initiator_depth = params.responder_resources = 1;
-        params.rnr_retry_count = 7; /* infinite retry */
+        this->thread_pool_->AddJob([&]()
+                                   {
+                                       rdma_conn_param params;
+                                       memset(&params, 0, sizeof(rdma_conn_param));
+                                       params.initiator_depth = params.responder_resources = 1;
+                                       params.rnr_retry_count = 7; /* infinite retry */
 
-        rdma_cm_event *event = NULL;
-        while (rdma_get_cm_event(channel_, &event) == 0)
-        {
-            struct rdma_cm_event event_copy;
-            memcpy(&event_copy, event, sizeof(rdma_cm_event));
-            rdma_ack_cm_event(event);
-            switch (event_copy.event)
-            {
-            case RDMA_CM_EVENT_ADDR_RESOLVED:
-                printf("RDMA_CM_EVENT_ADDR_RESOLVED");
-                InitConnection(event_copy.id);
-                PreConnectionCB(event_copy.id, buffer_size_);
-                TEST_NZ(rdma_resolve_route(event_copy.id, timeout_));
-                break;
-            case RDMA_CM_EVENT_ROUTE_RESOLVED:
-                printf("RDMA_CM_EVENT_ROUTE_RESOLVED");
-                TEST_NZ(rdma_connect(event_copy.id, &params));
-                break;
-            case RDMA_CM_EVENT_ESTABLISHED:
-                printf("RDMA_CM_EVENT_ESTABLISHED");
-                // none
-                break;
-            case RDMA_CM_EVENT_DISCONNECTED:
-                printf("RDMA_CM_EVENT_DISCONNECTED");
-                rdma_destroy_qp(event_copy.id);
-                DisconnectCB(event_copy.id);
-                rdma_destroy_id(event_copy.id);
-                return;
-            default:
-                DIE("unknown event");
-            }
-        }
+                                       rdma_cm_event *event = NULL;
+                                       while (rdma_get_cm_event(channel_, &event) == 0)
+                                       {
+                                           struct rdma_cm_event event_copy;
+                                           memcpy(&event_copy, event, sizeof(rdma_cm_event));
+                                           rdma_ack_cm_event(event);
+                                           switch (event_copy.event)
+                                           {
+                                           case RDMA_CM_EVENT_ADDR_RESOLVED:
+                                               SAY("RDMA_CM_EVENT_ADDR_RESOLVED");
+                                               InitConnection(event_copy.id);
+                                               PreConnectionCB(event_copy.id, buffer_size_);
+                                               TEST_NZ(rdma_resolve_route(event_copy.id, timeout_));
+                                               break;
+                                           case RDMA_CM_EVENT_ROUTE_RESOLVED:
+                                               SAY("RDMA_CM_EVENT_ROUTE_RESOLVED");
+                                               TEST_NZ(rdma_connect(event_copy.id, &params));
+                                               break;
+                                           case RDMA_CM_EVENT_ESTABLISHED:
+                                               SAY("RDMA_CM_EVENT_ESTABLISHED");
+                                               // none
+                                               break;
+                                           case RDMA_CM_EVENT_DISCONNECTED:
+                                               SAY("RDMA_CM_EVENT_DISCONNECTED");
+                                               rdma_destroy_qp(event_copy.id);
+                                               DisconnectCB(event_copy.id);
+                                               rdma_destroy_id(event_copy.id);
+                                               return;
+                                           default:
+                                               DIE("unknown event");
+                                           }
+                                       }
+                                   });
     }
 
 protected:
@@ -85,11 +102,18 @@ protected:
                 ctx->peer_rkey = ctx->msg->data.mr.rkey;
                 // there is no need break
             case MSG_READY:
-                memset(((ConnectionContext *)id->context)->buffer, 'a', 20);
-                ((ConnectionContext *)id->context)->buffer[21] = '\0';
-                Send(id, 21);
+            {
+                std::unique_lock<std::mutex> lg(record_lock_);
+                record_cv_.wait(lg, [&]()
+                                { return record_valid_; });
+                char *dest = ((ConnectionContext *)id->context)->buffer;
+                memcpy(dest, record_, record_len_);
+                Send(id, record_len_);
                 PostReceive(id);
-                break;
+                record_valid_ = false;
+                record_cv_.notify_one();
+            }
+            break;
             case MSG_DONE:
                 rdma_disconnect(id);
                 return;
@@ -139,4 +163,10 @@ protected:
 
 private:
     int timeout_;
+    // record
+    char *record_;
+    int record_len_;
+    bool record_valid_;
+    std::mutex record_lock_;
+    std::condition_variable record_cv_;
 };
