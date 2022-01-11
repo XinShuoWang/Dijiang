@@ -9,7 +9,7 @@ public:
     {
         // init
         timeout_ = timeout;
-        record_valid_ = false;
+        record_state_ = kWaitingtWrite;
         record_ = nullptr;
         record_len_ = 0;
         // resolve address
@@ -27,13 +27,22 @@ public:
 
     void Write(char *buffer, int size)
     {
-        std::unique_lock<std::mutex> lg(record_lock_);
-        record_cv_.wait(lg, [&]()
-                        { return !record_valid_; });
-        record_ = buffer, record_len_ = size, record_valid_ = true;
-        record_cv_.notify_one();
-        record_cv_.wait(lg, [&]()
-                        { return !record_valid_; });
+        {
+            std::unique_lock<std::mutex> lg(record_lock_);
+            record_cv_.wait(lg, [&]()
+                            { 
+                                std::cout << "I'm waiting for write." << std::endl;
+                                return record_state_ == kWaitingtWrite; });
+            record_ = buffer, record_len_ = size, record_state_ = kRecordValid;
+            record_cv_.notify_all();
+        }
+        {
+            std::unique_lock<std::mutex> lg(record_lock_);
+            record_cv_.wait(lg, [&]()
+                            { return record_state_ == kWaitingFinish; });
+            record_ = nullptr, record_len_ = 0, record_state_ = kWaitingtWrite;
+            record_cv_.notify_all();
+        }
     }
 
     void Loop() override
@@ -106,15 +115,15 @@ protected:
                 // there is no need break
             case MSG_READY:
             {
+                SAY("Sending data!");
                 std::unique_lock<std::mutex> lg(record_lock_);
-                record_cv_.wait(lg, [&]()
-                                { return record_valid_; });
+                record_cv_.wait(lg, [&]() { return record_state_ == kRecordValid; });
                 char *dest = ((ConnectionContext *)id->context)->buffer;
                 memcpy(dest, record_, record_len_);
                 Send(id, record_len_);
                 PostReceive(id);
-                record_valid_ = false;
-                record_cv_.notify_one();
+                record_state_ = kWaitingFinish;
+                record_cv_.notify_all();
             }
             break;
             case MSG_DONE:
@@ -230,7 +239,12 @@ private:
     // record
     char *record_;
     int record_len_;
-    bool record_valid_;
+    enum
+    {
+        kWaitingtWrite,
+        kRecordValid,
+        kWaitingFinish
+    } record_state_;
     std::mutex record_lock_;
     std::condition_variable record_cv_;
 };

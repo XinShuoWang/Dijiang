@@ -33,7 +33,7 @@ int main(int argc, char **argv)
         SAY("Client");
         int timeout = 500;
         auto socket = std::make_shared<RdmaClientSocket>(ip, port, threadNum, messageBufferSize, timeout);
-        char data[] = "hello,world";
+        char data[] = "Fuck you, Nvidia!";
         int size = strlen(data);
         socket->Write(data, size);
     }
