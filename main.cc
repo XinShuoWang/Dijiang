@@ -15,7 +15,7 @@ int main(int argc, char **argv)
     const int messageBufferSize = 10 * 1024 * 1024;
     const int threadNum = 256;
     char port[] = "12345";
-    char ip[] = "10.0.0.29";
+    char ip[] = "10.0.0.28";
     if (is_server)
     {
         SAY("Server");

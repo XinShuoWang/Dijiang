@@ -38,50 +38,51 @@ public:
 
     void Loop() override
     {
-        this->thread_pool_->AddJob([&]()
-                                   {
-                                       rdma_conn_param params;
-                                       memset(&params, 0, sizeof(rdma_conn_param));
-                                       params.initiator_depth = params.responder_resources = 1;
-                                       params.rnr_retry_count = 7; /* infinite retry */
+        auto event_loop = [&]()
+        {
+            rdma_conn_param params;
+            memset(&params, 0, sizeof(rdma_conn_param));
+            params.initiator_depth = params.responder_resources = 1;
+            params.rnr_retry_count = 7; /* infinite retry */
 
-                                       rdma_cm_event *event = NULL;
-                                       while (rdma_get_cm_event(channel_, &event) == 0)
-                                       {
-                                           struct rdma_cm_event event_copy;
-                                           memcpy(&event_copy, event, sizeof(rdma_cm_event));
-                                           rdma_ack_cm_event(event);
-                                           switch (event_copy.event)
-                                           {
-                                           case RDMA_CM_EVENT_ADDR_RESOLVED:
-                                               SAY("RDMA_CM_EVENT_ADDR_RESOLVED");
-                                               InitConnection(event_copy.id);
-                                               PreConnectionCB(event_copy.id, buffer_size_);
-                                               TEST_NZ(rdma_resolve_route(event_copy.id, timeout_));
-                                               break;
-                                           case RDMA_CM_EVENT_ROUTE_RESOLVED:
-                                               SAY("RDMA_CM_EVENT_ROUTE_RESOLVED");
-                                               TEST_NZ(rdma_connect(event_copy.id, &params));
-                                               break;
-                                           case RDMA_CM_EVENT_ESTABLISHED:
-                                               SAY("RDMA_CM_EVENT_ESTABLISHED");
-                                               // none
-                                               break;
-                                           case RDMA_CM_EVENT_DISCONNECTED:
-                                               SAY("RDMA_CM_EVENT_DISCONNECTED");
-                                               rdma_destroy_qp(event_copy.id);
-                                               DisconnectCB(event_copy.id);
-                                               rdma_destroy_id(event_copy.id);
-                                               return;
-                                           default:
-                                               DIE("unknown event");
-                                           }
-                                       }
-                                   });
+            rdma_cm_event *event = NULL;
+            while (rdma_get_cm_event(channel_, &event) == 0)
+            {
+                struct rdma_cm_event event_copy;
+                memcpy(&event_copy, event, sizeof(rdma_cm_event));
+                rdma_ack_cm_event(event);
+                switch (event_copy.event)
+                {
+                case RDMA_CM_EVENT_ADDR_RESOLVED:
+                    SAY("RDMA_CM_EVENT_ADDR_RESOLVED");
+                    InitConnection(event_copy.id);
+                    PreConnectionCB(event_copy.id, buffer_size_);
+                    TEST_NZ(rdma_resolve_route(event_copy.id, timeout_));
+                    break;
+                case RDMA_CM_EVENT_ROUTE_RESOLVED:
+                    SAY("RDMA_CM_EVENT_ROUTE_RESOLVED");
+                    TEST_NZ(rdma_connect(event_copy.id, &params));
+                    break;
+                case RDMA_CM_EVENT_ESTABLISHED:
+                    SAY("RDMA_CM_EVENT_ESTABLISHED");
+                    // none
+                    break;
+                case RDMA_CM_EVENT_DISCONNECTED:
+                    SAY("RDMA_CM_EVENT_DISCONNECTED");
+                    rdma_destroy_qp(event_copy.id);
+                    DisconnectCB(event_copy.id);
+                    rdma_destroy_id(event_copy.id);
+                    return;
+                default:
+                    DIE("unknown event");
+                }
+            }
+        };
+        this->thread_pool_->AddJob(event_loop);
     }
 
 protected:
-    void PreConnectionCB(rdma_cm_id *id, int buffer_size) override
+    void PreConnectionCB(rdma_cm_id *id, int buffer_size)
     {
         ConnectionContext *ctx = (ConnectionContext *)id->context;
         posix_memalign((void **)&ctx->buffer, sysconf(_SC_PAGESIZE), buffer_size);
@@ -91,7 +92,7 @@ protected:
         PostReceive(id);
     }
 
-    void CompletionCB(ibv_wc *wc) override
+    void CompletionCB(ibv_wc *wc)
     {
         rdma_cm_id *id = (rdma_cm_id *)(uintptr_t)(wc->wr_id);
         ConnectionContext *ctx = (ConnectionContext *)id->context;
@@ -161,6 +162,67 @@ protected:
         sge.length = sizeof(*ctx->msg);
         sge.lkey = ctx->msg_mr->lkey;
         TEST_NZ(ibv_post_recv(id->qp, &wr, &bad_wr));
+    }
+
+    void InitContext(ibv_context *verbs)
+    {
+        if (context_)
+        {
+            if (context_->ctx != verbs)
+                DIE("cannot handle events in more than one context.");
+            return;
+        }
+
+        context_ = (Context *)malloc(sizeof(Context));
+        context_->ctx = verbs;
+        TEST_Z(context_->pd = ibv_alloc_pd(context_->ctx));
+        TEST_Z(context_->comp_channel = ibv_create_comp_channel(context_->ctx));
+        TEST_Z(context_->cq = ibv_create_cq(context_->ctx, 10, NULL, context_->comp_channel, 0)); /* cqe=10 is arbitrary */
+        TEST_NZ(ibv_req_notify_cq(context_->cq, 0));
+
+        // create poll thread
+        auto poller = [&]()
+        {
+            ibv_cq *cq;
+            ibv_wc wc;
+            void *ctx = NULL;
+            while (1)
+            {
+                TEST_NZ(ibv_get_cq_event(context_->comp_channel, &cq, &ctx));
+                ibv_ack_cq_events(cq, 1);
+                TEST_NZ(ibv_req_notify_cq(cq, 0));
+
+                while (ibv_poll_cq(cq, 1, &wc))
+                {
+                    if (wc.status == IBV_WC_SUCCESS)
+                    {
+                        CompletionCB(&wc);
+                    }
+                    else
+                    {
+                        DIE("poll_cq: status is not IBV_WC_SUCCESS");
+                    }
+                }
+            }
+        };
+        thread_pool_->AddJob(poller);
+    }
+
+    void InitConnection(rdma_cm_id *id)
+    {
+        InitContext(id->verbs);
+
+        ibv_qp_init_attr qp_attr;
+        memset(&qp_attr, 0, sizeof(ibv_qp_init_attr));
+        qp_attr.send_cq = context_->cq;
+        qp_attr.recv_cq = context_->cq;
+        qp_attr.qp_type = IBV_QPT_RC;
+        qp_attr.cap.max_send_wr = 10;
+        qp_attr.cap.max_recv_wr = 10;
+        qp_attr.cap.max_send_sge = 1;
+        qp_attr.cap.max_recv_sge = 1;
+
+        TEST_NZ(rdma_create_qp(id, context_->pd, &qp_attr));
     }
 
 private:
