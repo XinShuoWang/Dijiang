@@ -41,10 +41,6 @@ public:
     virtual void Loop() = 0;
 
 protected:
-    virtual void PreConnectionCB(rdma_cm_id *id, int buffer_size) {}
-
-    virtual void OnConnectionCB(rdma_cm_id *id) {}
-
     virtual void DisconnectCB(rdma_cm_id *id)
     {
         ConnectionContext *ctx = (ConnectionContext *)id->context;
@@ -55,73 +51,9 @@ protected:
         free(ctx);
     }
 
-    virtual void CompletionCB(ibv_wc *wc) {}
-
     virtual void Send(rdma_cm_id *id, uint32_t len) = 0;
 
     virtual void PostReceive(rdma_cm_id *id) = 0;
-
-    virtual void InitContext(ibv_context *verbs)
-    {
-        if (context_)
-        {
-            if (context_->ctx != verbs)
-                DIE("cannot handle events in more than one context.");
-            return;
-        }
-
-        context_ = (Context *)malloc(sizeof(Context));
-        context_->ctx = verbs;
-        TEST_Z(context_->pd = ibv_alloc_pd(context_->ctx));
-        TEST_Z(context_->comp_channel = ibv_create_comp_channel(context_->ctx));
-        TEST_Z(context_->cq = ibv_create_cq(context_->ctx, 10, NULL, context_->comp_channel, 0)); /* cqe=10 is arbitrary */
-        TEST_NZ(ibv_req_notify_cq(context_->cq, 0));
-
-        // create poll thread
-        auto poller = [&]()
-        {
-            ibv_cq *cq;
-            ibv_wc wc;
-            void *ctx = NULL;
-            while (1)
-            {
-                TEST_NZ(ibv_get_cq_event(context_->comp_channel, &cq, &ctx));
-                ibv_ack_cq_events(cq, 1);
-                TEST_NZ(ibv_req_notify_cq(cq, 0));
-
-                while (ibv_poll_cq(cq, 1, &wc))
-                {
-                    if (wc.status == IBV_WC_SUCCESS)
-                    {
-                        CompletionCB(&wc);
-                    }
-                    else
-                    {
-                        DIE("poll_cq: status is not IBV_WC_SUCCESS");
-                    }
-                }
-            }
-        };
-        for (int i = 0; i < thread_pool_->GetThreadNum() / 2; ++i)
-            thread_pool_->AddJob(poller);
-    }
-
-    virtual void InitConnection(rdma_cm_id *id)
-    {
-        InitContext(id->verbs);
-
-        ibv_qp_init_attr qp_attr;
-        memset(&qp_attr, 0, sizeof(ibv_qp_init_attr));
-        qp_attr.send_cq = context_->cq;
-        qp_attr.recv_cq = context_->cq;
-        qp_attr.qp_type = IBV_QPT_RC;
-        qp_attr.cap.max_send_wr = 10;
-        qp_attr.cap.max_recv_wr = 10;
-        qp_attr.cap.max_send_sge = 1;
-        qp_attr.cap.max_recv_sge = 1;
-
-        TEST_NZ(rdma_create_qp(id, context_->pd, &qp_attr));
-    }
 
 protected:
     ThreadPool *thread_pool_;

@@ -24,24 +24,33 @@ public:
 
     for (int i = 0; i < thread_num_; ++i)
     {
-      threads_.emplace_back(std::thread([&]()
-                                        {
-                                          while (true)
-                                          {
-                                            Task func = []()
-                                            { return; };
-                                            {
-                                              std::unique_lock<std::mutex> lock(mutex_);
-                                              cv_.wait(lock, [&]()
-                                                       { return !queue_.empty() || state_ != kRunning; });
-                                              if (state_ == kStop)
-                                                return;
-                                              func = queue_.front();
-                                              queue_.pop();
-                                            }
-                                            func();
-                                          }
-                                        }));
+      auto t = [&]()
+      {
+        while (true)
+        {
+          Task func = []()
+          { return; };
+          {
+            std::unique_lock<std::mutex> lock(mutex_);
+            cv_.wait(lock, [&]()
+                     { return !queue_.empty() || state_ != kRunning; });
+            if (state_ == kStop)
+              return;
+            func = queue_.front();
+            queue_.pop();
+          }
+          try
+          {
+            func();
+          }
+          catch (std::exception &e)
+          {
+            std::cout << "running task, with exception..." << e.what() << std::endl;
+            return;
+          }
+        }
+      };
+      threads_.emplace_back(std::move(t));
     }
   }
 
