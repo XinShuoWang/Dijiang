@@ -188,10 +188,10 @@ protected:
         qp_attr.send_cq = context_->cq;
         qp_attr.recv_cq = context_->cq;
         qp_attr.qp_type = IBV_QPT_RC;
-        qp_attr.cap.max_send_wr = 10;
-        qp_attr.cap.max_recv_wr = 10;
-        qp_attr.cap.max_send_sge = 1;
-        qp_attr.cap.max_recv_sge = 1;
+        qp_attr.cap.max_send_wr = 256;
+        qp_attr.cap.max_recv_wr = 256;
+        qp_attr.cap.max_send_sge = 8;
+        qp_attr.cap.max_recv_sge = 8;
 
         TEST_NZ(rdma_create_qp(id, context_->pd, &qp_attr));
     }
