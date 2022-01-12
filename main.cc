@@ -22,8 +22,8 @@ int main(int argc, char **argv)
         auto socket = std::make_shared<RdmaServerSocket>(port, threadNum, messageBufferSize);
         auto handler = [](char *buffer, int size)
         {
-            std::string str(buffer, size);
-            fprintf(stdout, "dijinag -> size is: %d, content is: %s, \n", size, str.c_str());
+            //std::string str(buffer, size);
+            //fprintf(stdout, "dijinag -> size is: %d, content is: %s, \n", size, str.c_str());
         };
         socket->RegisterHandler(handler);
         socket->Loop();
@@ -32,24 +32,19 @@ int main(int argc, char **argv)
     {
         SAY("Client");
         std::vector<std::thread> v;
-        auto test = [&]()
-        {
-            int timeout = 500;
-            const int threadNum = 16;
-            auto socket = std::make_shared<RdmaClientSocket>(ip, port, threadNum, messageBufferSize, timeout);
-            char data[] = "Fuck you, Nvidia!";
-            int size = strlen(data);
-            socket->Write(data, size);
-        };
-
-        for (int i = 0; i < 32; ++i)
-        {
-            v.emplace_back(std::move(std::thread(test)));
-        }
-        for (int i = 0; i < v.size(); ++i)
-        {
-            v[i].join();
-        }
+        int timeout = 500;
+        const int threadNum = 16;
+        auto socket = std::make_shared<RdmaClientSocket>(ip, port, threadNum, messageBufferSize, timeout);
+        const int data_size = 128 * 1024;
+        char *data = new char[data_size];
+        memset(data, 'a', data_size);
+        auto start = std::chrono::steady_clock::now();
+        for (int i = 0; i < 1024; ++i)
+          socket->Write(data, data_size);
+        auto end = std::chrono::steady_clock::now();
+        std::chrono::duration<double> elapsed_seconds = end - start;
+        std::cout << "elapsed time: " << elapsed_seconds.count() << "s\n";
+        std::cout << "Bandwidth is: " << data_size / 1024.0 / elapsed_seconds.count() << "MB/s\n";
     }
     return 0;
 }

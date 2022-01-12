@@ -30,9 +30,7 @@ public:
         {
             std::unique_lock<std::mutex> lg(record_lock_);
             record_cv_.wait(lg, [&]()
-                            { 
-                                std::cout << "I'm waiting for write." << std::endl;
-                                return record_state_ == kWaitingtWrite; });
+                            { SAY("Waiting data!"); return record_state_ == kWaitingtWrite; });
             record_ = buffer, record_len_ = size, record_state_ = kRecordValid;
             record_cv_.notify_all();
         }
@@ -117,7 +115,8 @@ protected:
             {
                 SAY("Sending data!");
                 std::unique_lock<std::mutex> lg(record_lock_);
-                record_cv_.wait(lg, [&]() { return record_state_ == kRecordValid; });
+                record_cv_.wait(lg, [&]()
+                                { return record_state_ == kRecordValid; });
                 char *dest = ((ConnectionContext *)id->context)->buffer;
                 memcpy(dest, record_, record_len_);
                 Send(id, record_len_);
