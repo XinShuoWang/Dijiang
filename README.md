@@ -33,6 +33,7 @@ socket->Write(data, size);
 
 # 性能测试
 ## 带宽测试
+![image](https://user-images.githubusercontent.com/56379080/149137838-f43b7ec1-1591-46a3-b860-a005c1c7f1c6.png)
 
 
 ## 时延测试
